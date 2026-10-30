@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "id": "cubicx",
+  "version": "${version}",
+  "name": "CubicX",
+  "description": "",
+  "authors": [],
+  "contact": {},
+  "license": "GPL-3.0",
+  "icon": "assets/cubicx/icon.png",
+  "environment": "*",
+  "entrypoints": {
+    "client": [
+      "org.cloudandx.cubicx.client.CubicxClient"
+    ],
+    "main": [
+      "org.cloudandx.cubicx.Cubicx"
+    ]
+  },
+  "mixins": [
+    "cubicx.mixins.json",
+    {
+      "config": "cubicx.client.mixins.json",
+      "environment": "client"
+    }
+  ],
+  "depends": {
+    "fabricloader": ">=${loader_version}",
+    "fabric-api": "*",
+    "minecraft": "${minecraft_version}"
+  }
+}
