@@ -1,4 +1,4 @@
-package org.cloudandx.cubicx.mixin.core.height;
+package org.cloudandx.cubicx.mixin.height;
 
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
 import it.unimi.dsi.fastutil.ints.IntArrayList;
@@ -61,7 +61,7 @@ public abstract class MixinHeightmap {
 
     @Inject(method = "<init>", at = @At("RETURN"))
     private void cubicx$initHeights(ChunkAccess chunk, Types heightmapType, CallbackInfo ci) {
-        Arrays.fill(this.cubicx$heights, CubicMath.MIN_BLOCK);
+        Arrays.fill(this.cubicx$heights, chunk.getMinY());
     }
 
     /**
@@ -79,10 +79,13 @@ public abstract class MixinHeightmap {
             allHeightmaps.add(chunk.getOrCreateHeightmapUnprimed(type));
         }
         Int2ObjectMap<LevelChunkSection> cubeMap = ((CubicColumnAccess) chunk).cubicx$getCubeSectionsMap();
-        if (cubeMap.isEmpty()) {
-            return;
+        IntArrayList sortedCubeYs;
+        synchronized (cubeMap) {
+            if (cubeMap.isEmpty()) {
+                return;
+            }
+            sortedCubeYs = new IntArrayList(cubeMap.keySet());
         }
-        IntArrayList sortedCubeYs = new IntArrayList(cubeMap.keySet());
         sortedCubeYs.sort(IntComparators.OPPOSITE_COMPARATOR);
         List<Heightmap> remainingHeightmaps = new ObjectArrayList<>(size);
         for (int x = 0; x < 16; x++) {
@@ -141,9 +144,11 @@ public abstract class MixinHeightmap {
                 }
             }
             IntArrayList belowCubeYs = new IntArrayList();
-            for (int cyKey : cubeMap.keySet()) {
-                if (cyKey < startCubeY) {
-                    belowCubeYs.add(cyKey);
+            synchronized (cubeMap) {
+                for (int cyKey : cubeMap.keySet()) {
+                    if (cyKey < startCubeY) {
+                        belowCubeYs.add(cyKey);
+                    }
                 }
             }
             belowCubeYs.sort(IntComparators.OPPOSITE_COMPARATOR);
@@ -159,7 +164,7 @@ public abstract class MixinHeightmap {
                     }
                 }
             }
-            this.setHeight(localX, localZ, CubicMath.MIN_BLOCK);
+            this.setHeight(localX, localZ, this.chunk.getMinY());
             return true;
         }
         return false;
@@ -213,5 +218,14 @@ public abstract class MixinHeightmap {
         } else {
             primeHeightmaps(chunk, EnumSet.of(type));
         }
+    }
+
+    /**
+     * @author cloudandx
+     * @reason Prevent 32-bit signed integer underflow when computing highest taken Y on empty columns.
+     */
+    @Overwrite
+    public int getHighestTaken(final int x, final int z) {
+        return CubicMath.clampAdd(this.getFirstAvailable(x, z), -1);
     }
 }

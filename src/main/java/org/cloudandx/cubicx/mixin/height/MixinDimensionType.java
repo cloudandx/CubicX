@@ -1,4 +1,4 @@
-package org.cloudandx.cubicx.mixin.core.height;
+package org.cloudandx.cubicx.mixin.height;
 
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
@@ -13,39 +13,11 @@ import net.minecraft.world.level.dimension.DimensionType;
 import net.minecraft.world.level.dimension.DimensionType.MonsterSettings;
 import net.minecraft.world.level.dimension.DimensionType.Skybox;
 import org.cloudandx.cubicx.util.CubicMath;
-import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
-import org.spongepowered.asm.mixin.Mutable;
 import org.spongepowered.asm.mixin.Overwrite;
-import org.spongepowered.asm.mixin.Shadow;
-import org.spongepowered.asm.mixin.injection.At;
-import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(DimensionType.class)
 public abstract class MixinDimensionType {
-    @Shadow
-    @Final
-    @Mutable
-    public static int Y_SIZE;
-
-    @Shadow
-    @Final
-    @Mutable
-    public static int MAX_Y;
-
-    @Shadow
-    @Final
-    @Mutable
-    public static int MIN_Y;
-
-    @Inject(method = "<clinit>", at = @At("RETURN"))
-    private static void cubicx$unlockStaticBounds(CallbackInfo ci) {
-        Y_SIZE = CubicMath.MAX_BLOCK;
-        MAX_Y = CubicMath.MAX_BLOCK - 1;
-        MIN_Y = CubicMath.MIN_BLOCK;
-    }
-
     /**
      * @author cloudandx
      * @reason Unlock dimension codec intRange limits to full unbuffered 32-bit signed integer coordinates.
@@ -75,32 +47,5 @@ public abstract class MixinDimensionType {
                     .apply(i, DimensionType::new)
             )
         );
-    }
-
-    /**
-     * @author cloudandx
-     * @reason Unlock minimum dimension Y to exact Integer.MIN_VALUE without buffer zones.
-     */
-    @Overwrite
-    public int minY() {
-        return CubicMath.MIN_BLOCK;
-    }
-
-    /**
-     * @author cloudandx
-     * @reason Provide maximum 32-bit positive height for legacy callers.
-     */
-    @Overwrite
-    public int height() {
-        return CubicMath.MAX_BLOCK;
-    }
-
-    /**
-     * @author cloudandx
-     * @reason Provide maximum 32-bit positive logical height for legacy callers.
-     */
-    @Overwrite
-    public int logicalHeight() {
-        return CubicMath.MAX_BLOCK;
     }
 }

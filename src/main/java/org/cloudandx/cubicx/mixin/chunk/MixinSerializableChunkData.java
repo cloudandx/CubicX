@@ -1,4 +1,4 @@
-package org.cloudandx.cubicx.mixin.core.chunk;
+package org.cloudandx.cubicx.mixin.chunk;
 
 import com.mojang.serialization.Codec;
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
@@ -68,6 +68,7 @@ import net.minecraft.world.ticks.LevelChunkTicks;
 import net.minecraft.world.ticks.ProtoChunkTicks;
 import net.minecraft.world.ticks.SavedTick;
 import org.cloudandx.cubicx.api.CubicColumnAccess;
+import org.cloudandx.cubicx.util.CubicMath;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.spongepowered.asm.mixin.Final;
@@ -254,7 +255,7 @@ public abstract class MixinSerializableChunkData {
                 CompoundTag sectionTag = maybeSectionTag.get();
                 int y = sectionTag.getIntOr("Y", 0);
                 LevelChunkSection section;
-                if (y >= levelHeight.getMinSectionY() && y <= levelHeight.getMaxSectionY()) {
+                if (y >= CubicMath.MIN_CUBE && y <= CubicMath.MAX_CUBE) {
                     PalettedContainer<BlockState> blocks = sectionTag.getCompound("block_states")
                         .map(
                             container -> blockStatesCodec.parse(NbtOps.INSTANCE, container)

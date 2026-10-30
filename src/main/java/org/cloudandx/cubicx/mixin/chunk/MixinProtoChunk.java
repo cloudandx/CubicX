@@ -1,4 +1,4 @@
-package org.cloudandx.cubicx.mixin.core.chunk;
+package org.cloudandx.cubicx.mixin.chunk;
 
 import it.unimi.dsi.fastutil.shorts.ShortList;
 import java.util.EnumSet;

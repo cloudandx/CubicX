@@ -1,16 +1,24 @@
-package org.cloudandx.cubicx.mixin.core.height;
+package org.cloudandx.cubicx.mixin.height;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.SectionPos;
 import net.minecraft.world.level.LevelHeightAccessor;
 import org.cloudandx.cubicx.util.CubicMath;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Overwrite;
+import org.spongepowered.asm.mixin.Shadow;
 
 @Mixin(LevelHeightAccessor.class)
 public interface MixinLevelHeightAccessor {
+    @Shadow
+    int getMinY();
+
+    @Shadow
+    int getHeight();
+
     /**
      * @author cloudandx
-     * @reason Unlock full 32-bit maximum Y coordinate (Integer.MAX_VALUE) without 32-bit addition overflow.
+     * @reason Unlock full 32-bit maximum build height so ServerGamePacketListenerImpl never blocks building at Y=319.
      */
     @Overwrite
     default int getMaxY() {
@@ -19,34 +27,25 @@ public interface MixinLevelHeightAccessor {
 
     /**
      * @author cloudandx
-     * @reason Return total 16x16x16 cube count across the entire unbuffered 32-bit signed vertical range.
-     */
-    @Overwrite
-    default int getSectionsCount() {
-        return CubicMath.TOTAL_CUBE_COUNT;
-    }
-
-    /**
-     * @author cloudandx
-     * @reason Return minimum 28-bit signed cube Y coordinate (-134,217,728).
+     * @reason Return minimum section Y from dimension minY.
      */
     @Overwrite
     default int getMinSectionY() {
-        return CubicMath.MIN_CUBE;
+        return SectionPos.blockToSectionCoord(this.getMinY());
     }
 
     /**
      * @author cloudandx
-     * @reason Return maximum 28-bit signed cube Y coordinate (134,217,727).
+     * @reason Keep legacy section count bounded to base dimension height so packet and light loops never iterate 268 million sections.
      */
     @Overwrite
     default int getMaxSectionY() {
-        return CubicMath.MAX_CUBE;
+        return SectionPos.blockToSectionCoord(this.getMinY() + this.getHeight() - 1);
     }
 
     /**
      * @author cloudandx
-     * @reason All 32-bit signed Y coordinates are valid build heights.
+     * @reason All 32-bit signed Y coordinates (Integer.MIN_VALUE to Integer.MAX_VALUE) are valid build heights.
      */
     @Overwrite
     default boolean isInsideBuildHeight(final BlockPos pos) {
@@ -55,7 +54,7 @@ public interface MixinLevelHeightAccessor {
 
     /**
      * @author cloudandx
-     * @reason All 32-bit signed Y coordinates are valid build heights.
+     * @reason All 32-bit signed Y coordinates (Integer.MIN_VALUE to Integer.MAX_VALUE) are valid build heights.
      */
     @Overwrite
     default boolean isInsideBuildHeight(final int blockY) {
@@ -82,28 +81,28 @@ public interface MixinLevelHeightAccessor {
 
     /**
      * @author cloudandx
-     * @reason Map full 32-bit blockY directly to zero-based cube section index.
+     * @reason Map full 32-bit blockY to section index relative to minSectionY.
      */
     @Overwrite
     default int getSectionIndex(final int blockY) {
-        return CubicMath.cubeToSectionIndex(CubicMath.blockToCube(blockY));
+        return this.getSectionIndexFromSectionY(SectionPos.blockToSectionCoord(blockY));
     }
 
     /**
      * @author cloudandx
-     * @reason Map 28-bit signed sectionY to zero-based cube section index without overflow.
+     * @reason Map 28-bit signed sectionY to section index relative to minSectionY so SurfaceSystem never loops 2.14 billion times.
      */
     @Overwrite
     default int getSectionIndexFromSectionY(final int sectionY) {
-        return CubicMath.cubeToSectionIndex(sectionY);
+        return sectionY - this.getMinSectionY();
     }
 
     /**
      * @author cloudandx
-     * @reason Map zero-based cube section index back to 28-bit signed sectionY.
+     * @reason Map section index back to 28-bit signed sectionY.
      */
     @Overwrite
     default int getSectionYFromSectionIndex(final int sectionIndex) {
-        return CubicMath.sectionIndexToCube(sectionIndex);
+        return sectionIndex + this.getMinSectionY();
     }
 }

@@ -1,4 +1,4 @@
-package org.cloudandx.cubicx.mixin.core.chunk;
+package org.cloudandx.cubicx.mixin.chunk;
 
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Maps;

@@ -1,7 +1,9 @@
-package org.cloudandx.cubicx.mixin.core.chunk;
+package org.cloudandx.cubicx.mixin.chunk;
 
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
+import it.unimi.dsi.fastutil.ints.Int2ObjectMaps;
 import it.unimi.dsi.fastutil.shorts.ShortList;
+import it.unimi.dsi.fastutil.shorts.ShortLists;
 import net.minecraft.world.level.chunk.ImposterProtoChunk;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.chunk.LevelChunkSection;
@@ -23,7 +25,7 @@ public abstract class MixinImposterProtoChunk implements CubicColumnAccess {
 
     @Override
     public @Nullable LevelChunkSection cubicx$getCubeSectionIfPresent(int cubeY) {
-        return ((CubicColumnAccess) this.wrapped).cubicx$getCubeSectionIfPresent(cubeY);
+        return this.wrapped != null ? ((CubicColumnAccess) this.wrapped).cubicx$getCubeSectionIfPresent(cubeY) : null;
     }
 
     @Override
@@ -33,23 +35,29 @@ public abstract class MixinImposterProtoChunk implements CubicColumnAccess {
 
     @Override
     public void cubicx$putCubeSection(int cubeY, LevelChunkSection section) {
-        if (this.allowWrites) {
+        if (this.allowWrites && this.wrapped != null) {
             ((CubicColumnAccess) this.wrapped).cubicx$putCubeSection(cubeY, section);
         }
     }
 
     @Override
     public Int2ObjectMap<LevelChunkSection> cubicx$getCubeSectionsMap() {
-        return ((CubicColumnAccess) this.wrapped).cubicx$getCubeSectionsMap();
+        return this.wrapped != null
+            ? ((CubicColumnAccess) this.wrapped).cubicx$getCubeSectionsMap()
+            : Int2ObjectMaps.emptyMap();
     }
 
     @Override
     public ShortList cubicx$getOrCreatePostProcessing(int cubeY) {
-        return ((CubicColumnAccess) this.wrapped).cubicx$getOrCreatePostProcessing(cubeY);
+        return this.wrapped != null
+            ? ((CubicColumnAccess) this.wrapped).cubicx$getOrCreatePostProcessing(cubeY)
+            : ShortLists.emptyList();
     }
 
     @Override
     public Int2ObjectMap<ShortList> cubicx$getPostProcessingMap() {
-        return ((CubicColumnAccess) this.wrapped).cubicx$getPostProcessingMap();
+        return this.wrapped != null
+            ? ((CubicColumnAccess) this.wrapped).cubicx$getPostProcessingMap()
+            : Int2ObjectMaps.emptyMap();
     }
 }

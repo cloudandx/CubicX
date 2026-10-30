@@ -1,4 +1,4 @@
-package org.cloudandx.cubicx.mixin.core.pos;
+package org.cloudandx.cubicx.mixin.pos;
 
 import net.minecraft.world.level.ChunkPos;
 import org.spongepowered.asm.mixin.Final;

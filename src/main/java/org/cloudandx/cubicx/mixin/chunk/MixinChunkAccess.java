@@ -1,11 +1,15 @@
-package org.cloudandx.cubicx.mixin.core.chunk;
+package org.cloudandx.cubicx.mixin.chunk;
 
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
+import it.unimi.dsi.fastutil.ints.Int2ObjectMaps;
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.ints.IntArrayList;
 import it.unimi.dsi.fastutil.ints.IntComparators;
 import it.unimi.dsi.fastutil.shorts.ShortArrayList;
 import it.unimi.dsi.fastutil.shorts.ShortList;
+import it.unimi.dsi.fastutil.shorts.ShortLists;
+import java.util.EnumSet;
+import java.util.Map;
 import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.function.Predicate;
@@ -28,6 +32,8 @@ import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.LevelChunkSection;
 import net.minecraft.world.level.chunk.PalettedContainerFactory;
 import net.minecraft.world.level.chunk.UpgradeData;
+import net.minecraft.world.level.levelgen.Heightmap;
+import net.minecraft.world.level.levelgen.Heightmap.Types;
 import net.minecraft.world.level.levelgen.blending.BlendingData;
 import org.cloudandx.cubicx.api.CubicColumnAccess;
 import org.cloudandx.cubicx.util.CubicMath;
@@ -39,7 +45,6 @@ import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.ModifyArg;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
@@ -49,17 +54,37 @@ public abstract class MixinChunkAccess implements LevelHeightAccessor, CubicColu
     @Final
     protected ChunkPos chunkPos;
 
-    @Unique
-    private final Int2ObjectOpenHashMap<LevelChunkSection> cubicx$cubeSections = new Int2ObjectOpenHashMap<>();
+    @Shadow
+    @Final
+    protected Map<Types, Heightmap> heightmaps;
 
     @Unique
-    private final Int2ObjectOpenHashMap<ShortList> cubicx$postProcessingMap = new Int2ObjectOpenHashMap<>();
+    private Int2ObjectMap<LevelChunkSection> cubicx$cubeSections;
+
+    @Unique
+    private Int2ObjectMap<ShortList> cubicx$postProcessingMap;
 
     @Unique
     private PalettedContainerFactory cubicx$containerFactory;
 
     @Unique
     private LevelChunkSection cubicx$emptySection;
+
+    @Unique
+    private synchronized Int2ObjectMap<LevelChunkSection> cubicx$sectionsMap() {
+        if (this.cubicx$cubeSections == null) {
+            this.cubicx$cubeSections = Int2ObjectMaps.synchronize(new Int2ObjectOpenHashMap<>());
+        }
+        return this.cubicx$cubeSections;
+    }
+
+    @Unique
+    private synchronized Int2ObjectMap<ShortList> cubicx$postMap() {
+        if (this.cubicx$postProcessingMap == null) {
+            this.cubicx$postProcessingMap = Int2ObjectMaps.synchronize(new Int2ObjectOpenHashMap<>());
+        }
+        return this.cubicx$postProcessingMap;
+    }
 
     @Redirect(
         method = "<init>",
@@ -70,18 +95,6 @@ public abstract class MixinChunkAccess implements LevelHeightAccessor, CubicColu
     )
     private int cubicx$preventMassiveArrayAllocation(LevelHeightAccessor instance) {
         return 0;
-    }
-
-    @ModifyArg(
-        method = "<init>",
-        at = @At(
-            value = "INVOKE",
-            target = "Lnet/minecraft/world/level/lighting/ChunkSkyLightSources;<init>(Lnet/minecraft/world/level/LevelHeightAccessor;)V"
-        ),
-        index = 0
-    )
-    private LevelHeightAccessor cubicx$safeSkyLightSourcesAccessor(LevelHeightAccessor original) {
-        return LevelHeightAccessor.create(-64, 384);
     }
 
     @Inject(method = "<init>", at = @At("RETURN"))
@@ -95,13 +108,15 @@ public abstract class MixinChunkAccess implements LevelHeightAccessor, CubicColu
         @Nullable BlendingData blendingData,
         CallbackInfo ci
     ) {
+        Int2ObjectMap<LevelChunkSection> map = this.cubicx$sectionsMap();
+        this.cubicx$postMap();
         this.cubicx$containerFactory = containerFactory;
         this.cubicx$emptySection = new LevelChunkSection(containerFactory);
         if (sections != null) {
             for (int i = 0; i < sections.length; i++) {
                 LevelChunkSection section = sections[i];
                 if (section != null && !section.hasOnlyAir()) {
-                    this.cubicx$cubeSections.put(CubicMath.sectionIndexToCube(i), section);
+                    map.put(this.getSectionYFromSectionIndex(i), section);
                 }
             }
         }
@@ -109,46 +124,67 @@ public abstract class MixinChunkAccess implements LevelHeightAccessor, CubicColu
 
     @Override
     public @Nullable LevelChunkSection cubicx$getCubeSectionIfPresent(int cubeY) {
-        return this.cubicx$cubeSections.get(cubeY);
+        return this.cubicx$sectionsMap().get(cubeY);
     }
 
     @Override
     public LevelChunkSection cubicx$getOrCreateCubeSection(int cubeY) {
-        LevelChunkSection section = this.cubicx$cubeSections.get(cubeY);
-        if (section == null) {
-            section = new LevelChunkSection(this.cubicx$containerFactory);
-            this.cubicx$cubeSections.put(cubeY, section);
+        Int2ObjectMap<LevelChunkSection> map = this.cubicx$sectionsMap();
+        synchronized (map) {
+            LevelChunkSection section = map.get(cubeY);
+            if (section == null) {
+                section = new LevelChunkSection(this.cubicx$containerFactory);
+                map.put(cubeY, section);
+            }
+            return section;
         }
-        return section;
     }
 
     @Override
     public void cubicx$putCubeSection(int cubeY, LevelChunkSection section) {
+        Int2ObjectMap<LevelChunkSection> map = this.cubicx$sectionsMap();
         if (section == null) {
-            this.cubicx$cubeSections.remove(cubeY);
+            map.remove(cubeY);
         } else {
-            this.cubicx$cubeSections.put(cubeY, section);
+            map.put(cubeY, section);
         }
     }
 
     @Override
     public Int2ObjectMap<LevelChunkSection> cubicx$getCubeSectionsMap() {
-        return this.cubicx$cubeSections;
+        return this.cubicx$sectionsMap();
     }
 
     @Override
     public ShortList cubicx$getOrCreatePostProcessing(int cubeY) {
-        ShortList list = this.cubicx$postProcessingMap.get(cubeY);
-        if (list == null) {
-            list = new ShortArrayList();
-            this.cubicx$postProcessingMap.put(cubeY, list);
+        Int2ObjectMap<ShortList> map = this.cubicx$postMap();
+        synchronized (map) {
+            ShortList list = map.get(cubeY);
+            if (list == null) {
+                list = ShortLists.synchronize(new ShortArrayList());
+                map.put(cubeY, list);
+            }
+            return list;
         }
-        return list;
     }
 
     @Override
     public Int2ObjectMap<ShortList> cubicx$getPostProcessingMap() {
-        return this.cubicx$postProcessingMap;
+        return this.cubicx$postMap();
+    }
+
+    /**
+     * @author cloudandx
+     * @reason Prevent 32-bit signed integer underflow when subtracting 1 from Integer.MIN_VALUE on empty columns.
+     */
+    @Overwrite
+    public int getHeight(final Types type, final int x, final int z) {
+        Heightmap heightmap = this.heightmaps.get(type);
+        if (heightmap == null) {
+            Heightmap.primeHeightmaps((ChunkAccess) (Object) this, EnumSet.of(type));
+            heightmap = this.heightmaps.get(type);
+        }
+        return CubicMath.clampAdd(heightmap.getFirstAvailable(x & 15, z & 15), -1);
     }
 
     /**
@@ -157,17 +193,25 @@ public abstract class MixinChunkAccess implements LevelHeightAccessor, CubicColu
      */
     @Overwrite
     public LevelChunkSection getSection(final int sectionIndex) {
-        int cubeY = CubicMath.sectionIndexToCube(sectionIndex);
+        int cubeY = this.getSectionYFromSectionIndex(sectionIndex);
         return this.cubicx$getOrCreateCubeSection(cubeY);
     }
 
     /**
      * @author cloudandx
-     * @reason Return active non-empty 16x16x16 cube sections without allocating a 268-million-element array.
+     * @reason Provide bounded section view for vanilla client/biome callers while keeping sparse map backing.
      */
     @Overwrite
     public LevelChunkSection[] getSections() {
-        return this.cubicx$cubeSections.values().toArray(LevelChunkSection[]::new);
+        int count = Math.clamp(this.getSectionsCount(), 0, 256);
+        LevelChunkSection[] view = new LevelChunkSection[count];
+        int minSecY = this.getMinSectionY();
+        Int2ObjectMap<LevelChunkSection> map = this.cubicx$sectionsMap();
+        for (int i = 0; i < count; i++) {
+            LevelChunkSection sec = map.get(minSecY + i);
+            view[i] = sec != null ? sec : this.cubicx$emptySection;
+        }
+        return view;
     }
 
     /**
@@ -178,16 +222,19 @@ public abstract class MixinChunkAccess implements LevelHeightAccessor, CubicColu
     public int getHighestFilledSectionIndex() {
         int maxCubeY = Integer.MIN_VALUE;
         boolean found = false;
-        for (Int2ObjectMap.Entry<LevelChunkSection> entry : this.cubicx$cubeSections.int2ObjectEntrySet()) {
-            if (!entry.getValue().hasOnlyAir()) {
-                int cy = entry.getIntKey();
-                if (!found || cy > maxCubeY) {
-                    maxCubeY = cy;
-                    found = true;
+        Int2ObjectMap<LevelChunkSection> map = this.cubicx$sectionsMap();
+        synchronized (map) {
+            for (Int2ObjectMap.Entry<LevelChunkSection> entry : map.int2ObjectEntrySet()) {
+                if (!entry.getValue().hasOnlyAir()) {
+                    int cy = entry.getIntKey();
+                    if (!found || cy > maxCubeY) {
+                        maxCubeY = cy;
+                        found = true;
+                    }
                 }
             }
         }
-        return found ? CubicMath.cubeToSectionIndex(maxCubeY) : -1;
+        return found ? this.getSectionIndexFromSectionY(maxCubeY) : -1;
     }
 
     /**
@@ -198,10 +245,13 @@ public abstract class MixinChunkAccess implements LevelHeightAccessor, CubicColu
     public boolean isYSpaceEmpty(int yStartInclusive, int yEndInclusive) {
         int minCubeY = CubicMath.blockToCube(yStartInclusive);
         int maxCubeY = CubicMath.blockToCube(yEndInclusive);
-        for (Int2ObjectMap.Entry<LevelChunkSection> entry : this.cubicx$cubeSections.int2ObjectEntrySet()) {
-            int cubeY = entry.getIntKey();
-            if (cubeY >= minCubeY && cubeY <= maxCubeY && !entry.getValue().hasOnlyAir()) {
-                return false;
+        Int2ObjectMap<LevelChunkSection> map = this.cubicx$sectionsMap();
+        synchronized (map) {
+            for (Int2ObjectMap.Entry<LevelChunkSection> entry : map.int2ObjectEntrySet()) {
+                int cubeY = entry.getIntKey();
+                if (cubeY >= minCubeY && cubeY <= maxCubeY && !entry.getValue().hasOnlyAir()) {
+                    return false;
+                }
             }
         }
         return true;
@@ -213,8 +263,8 @@ public abstract class MixinChunkAccess implements LevelHeightAccessor, CubicColu
      */
     @Overwrite
     public void addPackedPostProcess(final ShortList packedOffsets, final int sectionIndex) {
-        if (packedOffsets != null && !packedOffsets.isEmpty()) {
-            this.cubicx$getOrCreatePostProcessing(CubicMath.sectionIndexToCube(sectionIndex)).addAll(packedOffsets);
+        if (!packedOffsets.isEmpty()) {
+            this.cubicx$getOrCreatePostProcessing(this.getSectionYFromSectionIndex(sectionIndex)).addAll(packedOffsets);
         }
     }
 
@@ -228,11 +278,15 @@ public abstract class MixinChunkAccess implements LevelHeightAccessor, CubicColu
             consumer.accept(pos, state);
             return Continuation.CONTINUE;
         };
-        IntArrayList cubeYs = new IntArrayList(this.cubicx$cubeSections.keySet());
+        Int2ObjectMap<LevelChunkSection> map = this.cubicx$sectionsMap();
+        IntArrayList cubeYs;
+        synchronized (map) {
+            cubeYs = new IntArrayList(map.keySet());
+        }
         cubeYs.sort(IntComparators.NATURAL_COMPARATOR);
         for (int i = 0; i < cubeYs.size(); i++) {
             int sectionY = cubeYs.getInt(i);
-            LevelChunkSection section = this.cubicx$cubeSections.get(sectionY);
+            LevelChunkSection section = map.get(sectionY);
             if (section != null && section.maybeHas(predicate)) {
                 BlockPos origin = SectionPos.of(this.chunkPos, sectionY).origin();
                 BlockScanUtils.findBlocksInSection(section, origin, 0, 0, 0, 15, 15, 15, predicate, blockStateConsumer);
@@ -246,8 +300,11 @@ public abstract class MixinChunkAccess implements LevelHeightAccessor, CubicColu
      */
     @Overwrite
     public void collectBiomesInPalette(final Set<Holder<Biome>> output) {
-        for (LevelChunkSection section : this.cubicx$cubeSections.values()) {
-            section.getBiomes().forEachInPalette(output::add);
+        Int2ObjectMap<LevelChunkSection> map = this.cubicx$sectionsMap();
+        synchronized (map) {
+            for (LevelChunkSection section : map.values()) {
+                section.getBiomes().forEachInPalette(output::add);
+            }
         }
     }
 
@@ -260,7 +317,7 @@ public abstract class MixinChunkAccess implements LevelHeightAccessor, CubicColu
         try {
             int blockY = QuartPos.toBlock(quartY);
             int cubeY = CubicMath.blockToCube(blockY);
-            LevelChunkSection section = this.cubicx$cubeSections.get(cubeY);
+            LevelChunkSection section = this.cubicx$sectionsMap().get(cubeY);
             if (section == null) {
                 section = this.cubicx$emptySection;
             }
@@ -281,10 +338,18 @@ public abstract class MixinChunkAccess implements LevelHeightAccessor, CubicColu
     public void fillBiomesFromNoise(final BiomeResolver biomeResolver) {
         int quartMinX = QuartPos.fromBlock(this.chunkPos.getMinBlockX());
         int quartMinZ = QuartPos.fromBlock(this.chunkPos.getMinBlockZ());
-        for (Int2ObjectMap.Entry<LevelChunkSection> entry : this.cubicx$cubeSections.int2ObjectEntrySet()) {
-            int sectionY = entry.getIntKey();
-            int quartMinY = QuartPos.fromSection(sectionY);
-            entry.getValue().fillBiomesFromNoise(biomeResolver, quartMinX, quartMinY, quartMinZ);
+        Int2ObjectMap<LevelChunkSection> map = this.cubicx$sectionsMap();
+        IntArrayList cubeYs;
+        synchronized (map) {
+            cubeYs = new IntArrayList(map.keySet());
+        }
+        for (int i = 0; i < cubeYs.size(); i++) {
+            int sectionY = cubeYs.getInt(i);
+            LevelChunkSection section = map.get(sectionY);
+            if (section != null) {
+                int quartMinY = QuartPos.fromSection(sectionY);
+                section.fillBiomesFromNoise(biomeResolver, quartMinX, quartMinY, quartMinZ);
+            }
         }
     }
 }

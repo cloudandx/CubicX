@@ -1,4 +1,4 @@
-package org.cloudandx.cubicx.mixin.core.network;
+package org.cloudandx.cubicx.mixin.network;
 
 import io.netty.buffer.ByteBuf;
 import net.minecraft.core.BlockPos;
